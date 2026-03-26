@@ -1,46 +1,96 @@
 from django.contrib import admin
+from django.db.models import F
 from django_summernote.admin import SummernoteModelAdmin
-
-"""
-Настройки Django Admin для моделей контента.
-
-Важно:
-- `CompanyInfo` — singleton, поэтому добавление второй записи запрещаем.
-- `Page.content` редактируется через визуальный Summernote редактор.
-"""
 
 from .models import CompanyInfo, Page, Program, Specialist
 
 
+# =========================
+# CompanyInfo (Singleton)
+# =========================
+
 @admin.register(CompanyInfo)
 class CompanyInfoAdmin(admin.ModelAdmin):
-    # Какие поля отображать в списке.
-    list_display = ("work_hours", "address", "views_count")
-    # Какие поля показывать/редактировать на форме.
-    fields = ("work_hours", "address", "instagram_url", "facebook_url", "views_count")
+    list_display = ("work_hours", "address", "views_count", "updated_at")
+
+    readonly_fields = (
+        "views_count",
+        "created_at",
+        "updated_at",
+    )
+
+    fields = (
+        "work_hours",
+        "address",
+        "instagram_url",
+        "facebook_url",
+        "views_count",
+        "created_at",
+        "updated_at",
+    )
 
     def has_add_permission(self, request):
-        # Singleton: добавлять можно только если запись еще не создана.
+        # Можно создать новую запись, только если нет ни одной
         return not CompanyInfo.objects.exists()
 
+    def has_delete_permission(self, request, obj=None):
+        # РАЗРЕШАЕМ удаление
+        return True
+
+
+# =========================
+# Page
+# =========================
 
 @admin.register(Page)
 class PageAdmin(SummernoteModelAdmin):
-    # SummernoteModelAdmin использует Summernote для полей контента.
-    list_display = ("title", "slug", "order")
-    # Автозаполнение slug из title в админке.
+    """
+    Админка страниц с визуальным редактором.
+    """
+
+    list_display = ("title", "slug", "order", "created_at")
+    list_editable = ("order",)
+    search_fields = ("title", "slug")
+    ordering = ("order", "id")
+
     prepopulated_fields = {"slug": ("title",)}
-    # Поля, которые будут редактироваться через Summernote.
     summernote_fields = ("content",)
 
+    list_per_page = 20
+
+
+# =========================
+# Program
+# =========================
 
 @admin.register(Program)
 class ProgramAdmin(admin.ModelAdmin):
-    # В списке показываем название и id (id удобно, чтобы отличать элементы).
-    list_display = ("name", "id")
+    """
+    Админка программ.
+    """
 
+    list_display = ("name", "id", "created_at")
+    search_fields = ("name",)
+    ordering = ("id",)
+
+    list_per_page = 20
+
+
+# =========================
+# Specialist
+# =========================
 
 @admin.register(Specialist)
 class SpecialistAdmin(admin.ModelAdmin):
-    # В списке показываем ФИО и должность.
-    list_display = ("full_name", "position", "id")
+    """
+    Админка специалистов.
+    """
+
+    list_display = ("full_name", "position", "program", "id")
+    search_fields = ("full_name", "position")
+    list_filter = ("program",)
+
+    autocomplete_fields = ("program",)
+
+    ordering = ("id",)
+    list_per_page = 20

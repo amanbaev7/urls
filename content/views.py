@@ -1,94 +1,127 @@
 from django.db.models import F
-from django.shortcuts import get_object_or_404
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.viewsets import ReadOnlyModelViewSet
+from rest_framework.decorators import action
 
 from .models import CompanyInfo, Page, Program, Specialist
 from .serializers import (
-    CompanyInfoSerializer,
-    PageDetailSerializer,
+    CompanyInfoReadSerializer,
     PageNavigationSerializer,
-    ProgramSerializer,
-    SpecialistSerializer,
+    PageDetailSerializer,
+    ProgramReadSerializer,
+    SpecialistReadSerializer,
 )
 
-"""
-Представления (views) приложения `content`.
 
-Здесь реализованы REST endpoint'ы, которые возвращают контент сайта в формате JSON:
-- режим работы/адрес/соцсети (singleton CompanyInfo)
-- список страниц и контент страниц по `slug`
-- список программ и специалистов
-- POST для инкремента счетчика просмотров главной страницы
-"""
+# =========================
+# CompanyInfo (Singleton)
+# =========================
 
-
-class CommonInfoView(APIView):
-    # Доступ разрешен всем (без авторизации), т.к. это публичный сайт.
-    permission_classes = [AllowAny]
-
-    def get(self, request):
-        # Получаем singleton-запись. Если ее нет — она создается автоматически.
-        company = CompanyInfo.get_solo()
-        # Передаем `request` в контекст сериализатора, чтобы ImageField отдал корректные URL.
-        return Response(CompanyInfoSerializer(company, context={"request": request}).data)
-
-
-class PagesListView(APIView):
-    # Публичный список навигационных страниц.
-    permission_classes = [AllowAny]
-
-    def get(self, request):
-        # Даем список в нужном порядке: сначала `order`, затем стабильность по `id`.
-        qs = Page.objects.all().order_by("order", "id")
-        return Response(PageNavigationSerializer(qs, many=True, context={"request": request}).data)
-
-
-class PageDetailView(APIView):
-    # Публичный endpoint конкретной страницы по `slug`.
-    permission_classes = [AllowAny]
-
-    def get(self, request, slug: str):
-        # Ищем страницу именно по slug (как требуется ТЗ).
-        page = get_object_or_404(Page, slug=slug)
-        return Response(PageDetailSerializer(page, context={"request": request}).data)
-
-
-class ProgramsListView(APIView):
-    # Публичный список программ.
-    permission_classes = [AllowAny]
-
-    def get(self, request):
-        # Сортировка по id для предсказуемого вывода.
-        qs = Program.objects.all().order_by("id")
-        return Response(ProgramSerializer(qs, many=True, context={"request": request}).data)
-
-
-class SpecialistsListView(APIView):
-    # Публичный список специалистов.
-    permission_classes = [AllowAny]
-
-    def get(self, request):
-        # Сортировка по id для предсказуемого вывода.
-        qs = Specialist.objects.all().order_by("id")
-        return Response(SpecialistSerializer(qs, many=True, context={"request": request}).data)
-
-
-class IncrementViewsView(APIView):
+class CompanyInfoViewSet(ReadOnlyModelViewSet):
     """
-    POST /api/v1/increment-views/
-    Инкрементирует views_count на +1 (используется для главной страницы).
+    Singleton API для информации о компании.
+
+    list() возвращает единственную запись.
     """
 
-    # Открытый endpoint; при желании можно позже добавить защиту (rate limit/auth).
+    serializer_class = CompanyInfoReadSerializer
     permission_classes = [AllowAny]
 
-    def post(self, request):
-        # Гарантируем наличие singleton-записи до обновления.
-        CompanyInfo.get_solo()
-        # Обновляем счетчик на уровне БД через F-expression (меньше гонок при параллельных запросах).
-        CompanyInfo.objects.filter(pk=1).update(views_count=F("views_count") + 1)
-        # Возвращаем актуальное значение после обновления.
+    def get_queryset(self):
+        """
+        Всегда возвращает один объект.
+        """
+        return CompanyInfo.objects.all()
+
+    def list(self, request, *args, **kwargs):
+        """
+        Переопределяем list → возвращаем singleton.
+        """
         company = CompanyInfo.get_solo()
-        return Response({"views_count": company.views_count})
+        serializer = self.get_serializer(company)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=["post"])
+    def increment_views(self, request):
+        """
+        POST /company-info/increment_views/
+
+        Безопасный инкремент счетчика.
+        """
+
+        company = CompanyInfo.get_solo()
+
+        CompanyInfo.objects.filter(pk=company.pk).update(
+            views_count=F("views_count") + 1
+        )
+
+        company.refresh_from_db()
+
+        return Response({
+            "views_count": company.views_count
+        })
+
+
+# =========================
+# Page
+# =========================
+
+class PageViewSet(ReadOnlyModelViewSet):
+    """
+    API страниц.
+
+    list → навигация  
+    retrieve → детальная страница  
+    """
+
+    permission_classes = [AllowAny]
+    lookup_field = "slug"
+
+    def get_queryset(self):
+        return Page.objects.all().order_by("order", "id")
+
+    def get_serializer_class(self):
+        """
+        Разные сериализаторы:
+        - list → легкий
+        - retrieve → полный
+        """
+        if self.action == "list":
+            return PageNavigationSerializer
+        return PageDetailSerializer
+
+
+# =========================
+# Program
+# =========================
+
+class ProgramViewSet(ReadOnlyModelViewSet):
+    """
+    API программ.
+    """
+
+    permission_classes = [AllowAny]
+    serializer_class = ProgramReadSerializer
+
+    def get_queryset(self):
+        return Program.objects.all().order_by("id")
+
+
+# =========================
+# Specialist
+# =========================
+
+class SpecialistViewSet(ReadOnlyModelViewSet):
+    """
+    API специалистов.
+
+    Оптимизирован select_related.
+    """
+
+    permission_classes = [AllowAny]
+    serializer_class = SpecialistReadSerializer
+
+    def get_queryset(self):
+        return Specialist.objects.select_related("program").all().order_by("id")
