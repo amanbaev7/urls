@@ -24,6 +24,7 @@ class CompanyInfoReadSerializer(serializers.ModelSerializer):
             "address",
             "instagram_url",
             "facebook_url",
+            "map_url",
             "views_count",
         )
         read_only_fields = ("views_count",)
@@ -44,6 +45,7 @@ class CompanyInfoWriteSerializer(serializers.ModelSerializer):
             "address",
             "instagram_url",
             "facebook_url",
+            "map_url",
         )
 
     def validate(self, attrs):
@@ -52,7 +54,7 @@ class CompanyInfoWriteSerializer(serializers.ModelSerializer):
         """
         validator = URLValidator()
 
-        for field in ["instagram_url", "facebook_url"]:
+        for field in ["instagram_url", "facebook_url", "map_url"]:
             value = attrs.get(field)
             if value:
                 try:

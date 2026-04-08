@@ -56,6 +56,11 @@ class CompanyInfo(BaseModel):
         verbose_name="Facebook ссылка"
     )
 
+    map_url = models.URLField(
+        blank=True,
+        verbose_name="Ссылка на карту"
+    )
+
     views_count = models.PositiveIntegerField(
         default=0,
         verbose_name="Количество просмотров"
